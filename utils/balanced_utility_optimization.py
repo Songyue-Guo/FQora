@@ -18,8 +18,8 @@ import torchtext
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-d', default='sentiment')  # dataset: sentiment/20news
-parser.add_argument('-m', default='textcnn')    # feature extractor: textcnn/lstm
+parser.add_argument('-d', default='sentiment')  
+parser.add_argument('-m', default='textcnn')    
 parser.add_argument('-t', default='bandit')     # algorithm
 parser.add_argument('-g', default='0')          # GPU number
 parser.add_argument('-c', default='')           # remark
