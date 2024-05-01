@@ -29,11 +29,11 @@ args = parser.parse_args()
 
 #os.environ['CUDA_VISIBLE_DEVICES'] = args.g
 device = torch.device('cuda:'+str(args.g) if torch.cuda.is_available() else 'cpu')
-cfg = Config(data=args.d, model=args.m, task=args.t)    # model config
-tasks = cfg.data['tasks'] 
+cfg = Config(data=args.d, model=args.m, agent=args.t)    # model config
+agents = cfg.data['agents'] 
 criterion = torch.nn.CrossEntropyLoss() 
-print_result = pd.DataFrame(columns=tasks+['avg_acc'])
-print_loss = pd.DataFrame(columns=tasks+['var'])
+print_result = pd.DataFrame(columns=agents+['avg_acc'])
+print_loss = pd.DataFrame(columns=agents+['var'])
 
 if __name__ == '__main__':
     from data.dataset import NewsDataset, SentimentDataset
@@ -113,19 +113,19 @@ def get_opt(model, rep=False, dis=False):
     return opts, schedulers
 
 
-def balanced_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
+def balanced_multi_agent():
+    n_batches = min([len(loader.train[t].dataset.examples) for t in agents]) // cfg.data['batch_size']
     model = init_model()
     [opt_c, opt_g], schedulers = get_opt(model, rep=True)
-    output_weight = pd.DataFrame(columns=tasks)
-    output_scale = pd.DataFrame(columns=tasks)
+    output_weight = pd.DataFrame(columns=agents)
+    output_scale = pd.DataFrame(columns=agents)
     t0 = time.time()
     for epoch in tqdm(range(max_epoch), unit='epoch'):
         # train
         for m in model:
             model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        d = {t: 0 for t in tasks}
+        iters = {t: iter(loader.train[t]) for t in agents}
+        d = {t: 0 for t in agents}
         output_w = []
         output_s = []
         for n in range(n_batches):
@@ -135,7 +135,7 @@ def balanced_multi_task():
             ys = {}
             opt_g.zero_grad()
             opt_c.zero_grad()
-            for t in tasks:
+            for t in agents:
                 batch = next(iters[t])
                 d[t] += 1
                 if batch.text.shape[1] != cfg.data['batch_size']:
@@ -160,12 +160,12 @@ def balanced_multi_task():
             # gn = gradient_normalizers(grads, losses, 'loss+')
             # grads = {t: grads[t][0] / gn[t] for t in grads}
             # # Frank-Wolfe iteration to compute scales.
-            # sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in tasks])
-            # scales = {t: sol[i] for i, t in enumerate(tasks)}
+            # sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in agents])
+            # scales = {t: sol[i] for i, t in enumerate(agents)}
             # losses_ = {}
             # opt_g.zero_grad()
             # opt_c.zero_grad()
-            # for t in tasks:
+            # for t in agents:
             #     if n == 0:
             #         output_s.append(scales[t])
             #     y_ = model[t](model['rep'](xs[t]))
@@ -177,21 +177,21 @@ def balanced_multi_task():
                 # opt_g.step()
                 # opt_c.step()
 
-            ls_ = torch.stack([losses[t] for t in tasks])
-            shared_parameters, task_specific_parameters = get_parameters(model)
+            ls_ = torch.stack([losses[t] for t in agents])
+            shared_parameters, agent_specific_parameters = get_parameters(model)
 
             # weight method
-            mcgrad = MCGrad(cfg, n_tasks=len(tasks), device=device)
+            mcgrad = MCGrad(cfg, n_agents=len(agents), device=device)
 
             w = mcgrad.backward(
                 losses=ls_,
                 shared_parameters=shared_parameters,
-                # task_specific_parameters=task_specific_parameters,
+                # agent_specific_parameters=agent_specific_parameters,
                 # last_shared_parameters=list(model.last_shared_parameters()),
                 # representation=features,
             )
             # loss = None
-            # for i, t in enumerate(tasks):
+            # for i, t in enumerate(agents):
             #     if n == 0:
             #         output_w = list(w)
             #     y_ = model[t](model['rep'](xs[t]))
@@ -200,7 +200,7 @@ def balanced_multi_task():
             #         loss += loss_t * w[i]
             #     else:
             #         loss = loss_t * w[i]
-            # loss = loss / len(tasks)
+            # loss = loss / len(agents)
             # opt_g.zero_grad()
             # opt_c.zero_grad()
             # loss.backward()
@@ -235,26 +235,26 @@ def balanced_multi_task():
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + ' | ' +
                  'Time Taken: [{:.2f} sec]'
                  .format(t1))
-            validate_all_tasks(model, epoch)
+            validate_all_agents(model, epoch)
 
         scheduler_step(schedulers)
 
     pass
 
 
-def balancedmgda_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
+def balancedmgda_multi_agent():
+    n_batches = min([len(loader.train[t].dataset.examples) for t in agents]) // cfg.data['batch_size']
     model = init_model()
     [opt_c, opt_g], schedulers = get_opt(model, rep=True)
-    output_weight = pd.DataFrame(columns=tasks)
-    output_scale = pd.DataFrame(columns=tasks)
+    output_weight = pd.DataFrame(columns=agents)
+    output_scale = pd.DataFrame(columns=agents)
     t0 = time.time()
     for epoch in tqdm(range(max_epoch), unit='epoch'):
         # train
         for m in model:
             model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        d = {t: 0 for t in tasks}
+        iters = {t: iter(loader.train[t]) for t in agents}
+        d = {t: 0 for t in agents}
         output_w = []
         output_s = []
         for n in range(n_batches):
@@ -262,7 +262,7 @@ def balancedmgda_multi_task():
             losses = {}
             xs = {}
             ys = {}
-            for t in tasks:
+            for t in agents:
                 batch = next(iters[t])
                 d[t] += 1
                 if batch.text.shape[1] != cfg.data['batch_size']:
@@ -286,29 +286,29 @@ def balancedmgda_multi_task():
             gn = gradient_normalizers(grads, losses, 'loss+')
             grads = {t: grads[t][0] / gn[t] for t in grads}
             # Frank-Wolfe iteration to compute scales.
-            sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in tasks])
-            scales = {t: sol[i] for i, t in enumerate(tasks)}
+            sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in agents])
+            scales = {t: sol[i] for i, t in enumerate(agents)}
             losses_ = {}
 
             opt_g.zero_grad()
             opt_c.zero_grad()
-            for t in tasks:
+            for t in agents:
                 if n == 0:
                     output_s.append(scales[t])
                 y_ = model[t](model['rep'](xs[t]))
                 loss_t = criterion(y_, ys[t])
                 losses_[t] = loss_t
 
-            ls_ = torch.stack([losses_[t] for t in tasks])
-            shared_parameters, task_specific_parameters = get_parameters(model)
+            ls_ = torch.stack([losses_[t] for t in agents])
+            shared_parameters, agent_specific_parameters = get_parameters(model)
 
             # weight method
-            cagrad = balancedGrad(cfg, list(scales.values()), n_tasks=len(tasks), device=device)
+            cagrad = balancedGrad(cfg, list(scales.values()), n_agents=len(agents), device=device)
 
             w = cagrad.backward(
                 losses=ls_,
                 shared_parameters=shared_parameters,
-                # task_specific_parameters=task_specific_parameters,
+                # agent_specific_parameters=agent_specific_parameters,
                 # last_shared_parameters=list(model.last_shared_parameters()),
                 # representation=features,
             )
@@ -335,171 +335,28 @@ def balancedmgda_multi_task():
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + ' | ' +
                  'Time Taken: [{:.2f} sec]'
                  .format(t1))
-            #validate_all_tasks(model, epoch)
+            #validate_all_agents(model, epoch)
 
         scheduler_step(schedulers)
 
     pass
 
 
-def mgdacag_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
+
+
+
+def mgda_multi_agent():
+    n_batches = min([len(loader.train[t].dataset.examples) for t in agents]) // cfg.data['batch_size']
     model = init_model()
     [opt_c, opt_g], schedulers = get_opt(model, rep=True)
-    output_weight = pd.DataFrame(columns=tasks)
-    for epoch in tqdm(range(max_epoch), unit='epoch'):
-        # train
-        for m in model:
-            model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        d = {t: 0 for t in tasks}
-        output_w = []
-        for n in range(n_batches):
-            grads = {}
-            losses = {}
-            xs = {}
-            ys = {}
-            for t in tasks:
-                batch = next(iters[t])
-                d[t] += 1
-                if batch.text.shape[1] != cfg.data['batch_size']:
-                    batch = next(iters[t])
-                    d[t] += 1
-                x, y = batch.text.to(device), batch.label.to(device)
-                xs[t] = x
-                ys[t] = y
-
-                with torch.no_grad():
-                    rep = model['rep'](x)
-                rep = rep.clone().requires_grad_()
-                y_ = model[t](rep)
-                loss = criterion(y_, y)
-                losses[t] = loss.data
-                opt_c.zero_grad()
-                loss.backward()
-                grads[t] = [rep.grad.data.clone().requires_grad_(False)]
-
-            # Normalize all gradients, this is optional and not included in the paper.
-            gn = gradient_normalizers(grads, losses, 'loss+')
-            grads = {t: grads[t][0] / gn[t] for t in grads}
-            # Frank-Wolfe iteration to compute scales.
-            sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in tasks])
-            scales = {t: sol[i] for i, t in enumerate(tasks)}
-            losses_ = {}
-            opt_g.zero_grad()
-            opt_c.zero_grad()
-            for t in tasks:
-                if n == 0:
-                    output_w.append(scales[t])
-                y_ = model[t](model['rep'](xs[t]))
-                loss = criterion(y_, ys[t]) * scales[t]
-                losses_[t] = loss
-                # opt_g.zero_grad()
-                # opt_c.zero_grad()
-                # loss.backward()
-                # opt_g.step()
-                # opt_c.step()
-
-            ls_ = torch.stack([losses_[t] for t in tasks])
-            shared_parameters, task_specific_parameters = get_parameters(model)
-
-            # weight method
-            cagrad = CAGrad(cfg, n_tasks=len(tasks), device=device)
-
-            loss, extra_outputs = cagrad.backward(
-                losses=ls_,
-                shared_parameters=shared_parameters,
-                # task_specific_parameters=task_specific_parameters,
-                # last_shared_parameters=list(model.last_shared_parameters()),
-                # representation=features,
-            )
-            opt_g.step()
-            opt_c.step()
-
-        output_weight.loc[epoch] = output_w
-        output_weight.to_csv(os.path.join(save_path, "mgda_scale.csv"))
-        # validation
-        if epoch % 10 == 0:
-            validate_all_tasks(model, epoch)
-
-        scheduler_step(schedulers)
-
-    pass
-
-
-def cagrad_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
-    model = init_model()
-    [opt_c, opt_g], schedulers = get_opt(model, rep=True)
-    output_weight = pd.DataFrame(columns=tasks)
-    for epoch in tqdm(range(max_epoch), unit='epoch'):
-        # train
-        for m in model:
-            model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        d = {t: 0 for t in tasks}
-        output_w = []
-        for n in range(n_batches):
-            grads = {}
-            losses = {}
-            xs = {}
-            ys = {}
-            opt_g.zero_grad()
-            opt_c.zero_grad()
-            for t in tasks:
-                batch = next(iters[t])
-                d[t] += 1
-                if batch.text.shape[1] != cfg.data['batch_size']:
-                    batch = next(iters[t])
-                    d[t] += 1
-                x, y = batch.text.to(device), batch.label.to(device)
-                xs[t] = x
-                ys[t] = y
-
-                y_ = model[t](model['rep'](xs[t]))
-
-                loss = criterion(y_, y)
-                losses[t] = loss
-
-            ls_ = torch.stack([losses[t] for t in tasks])
-            shared_parameters, task_specific_parameters = get_parameters(model)
-
-            # weight method
-            cagrad = CAGrad(cfg, n_tasks=len(tasks), device=device)
-
-            loss, extra_outputs = cagrad.backward(
-                losses=ls_,
-                shared_parameters=shared_parameters,
-                # task_specific_parameters=task_specific_parameters,
-                # last_shared_parameters=list(model.last_shared_parameters()),
-                # representation=features,
-            )
-            opt_g.step()
-            opt_c.step()
-
-        # output_weight.loc[epoch] = output_w
-        # output_weight.to_csv(os.path.join(save_path, "mgda_scale.csv"))
-        # validation
-        if epoch % 10 == 0:
-            validate_all_tasks(model, epoch)
-
-        scheduler_step(schedulers)
-
-    pass
-
-
-def mgda_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
-    model = init_model()
-    [opt_c, opt_g], schedulers = get_opt(model, rep=True)
-    output_weight = pd.DataFrame(columns=tasks)
+    output_weight = pd.DataFrame(columns=agents)
     t0 = time.time()
     for epoch in tqdm(range(max_epoch), unit='epoch'):
         # train
         for m in model:
             model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        d = {t: 0 for t in tasks}
+        iters = {t: iter(loader.train[t]) for t in agents}
+        d = {t: 0 for t in agents}
         output_s = []
         output_w = []
         for n in range(n_batches): 
@@ -507,7 +364,7 @@ def mgda_multi_task():
             losses = {}
             xs = {}
             ys = {}
-            for t in tasks:
+            for t in agents:
                 batch = next(iters[t])
                 d[t] += 1 
                 if batch.text.shape[1] != cfg.data['batch_size']:
@@ -529,9 +386,9 @@ def mgda_multi_task():
             gn = gradient_normalizers(grads, losses, 'loss+')
             grads = {t: grads[t][0] / gn[t] for t in grads}
             # Frank-Wolfe iteration to compute scales.
-            sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in tasks])
-            scales = {t: sol[i] for i, t in enumerate(tasks)}
-            for t in tasks:
+            sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in agents])
+            scales = {t: sol[i] for i, t in enumerate(agents)}
+            for t in agents:
                 if n == 0:
                     output_s.append(scales[t])
                 y_ = model[t](model['rep'](xs[t]))
@@ -556,172 +413,22 @@ def mgda_multi_task():
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + ' | ' +
                  'Time Taken: [{:.2f} sec]'
                  .format(t1))
-            validate_all_tasks(model, epoch)
+            validate_all_agents(model, epoch)
 
         scheduler_step(schedulers)
-
-
-def uniform_multi_task():
-    n_batches = min([len(loader.train[t].dataset.examples) for t in tasks]) // cfg.data['batch_size']
-    model = init_model()
-    [opt], schedulers = get_opt(model)
-    for epoch in tqdm(range(max_epoch), unit='epoch'):
-        # train
-        for m in model:
-            model[m].train()
-        iters = {t: iter(loader.train[t]) for t in tasks}
-        for i in range(n_batches):
-            for t in tasks:
-                batch = iters[t].__next__()
-                x, y = batch.text.to(device), batch.label.to(device)
-                y_ = model[t](model['rep'](x))
-                loss = criterion(y_, y) / len(tasks)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-
-        # validation
-        if epoch % 10 == 0:
-            validate_all_tasks(model, epoch)
-
-        if epoch % 500 == 0 and epoch > 0:
-            state_dict = {'model': {}}
-            for key in model:
-                state_dict['model'][key] = model[key].state_dict()
-            os.makedirs(f'checkpoints/{args.d}/uniform/', exist_ok=True)
-            torch.save(state_dict, f'checkpoints/{args.d}/uniform/{epoch}')
-
-        scheduler_step(schedulers)
-
-
-def single_task():
-    test_batch = 10
-    model = init_model()
-    [opt], schedulers = get_opt(model)
-    losses_var = []
-    avg_acc = []
-    avg_num = []
-    for t in tasks:
-        losses_var.append([])
-        avg_acc.append([])
-        avg_num.append([])
-        for epoch in tqdm(range(max_epoch), unit='epoch', postfix=t):
-            # train
-            for m in model:
-                model[m].train()
-            train_loss = []
-            for i, batch in enumerate(loader.train[t]):
-                x, y = batch.text.to(device), batch.label.to(device)
-                y_ = model[t](model['rep'](x))
-                loss = criterion(y_, y)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                train_loss.append(loss.item())
-            scheduler_step(schedulers)
-            writer.add_scalar(f'train_loss/{t}', sum(train_loss)/len(train_loss), epoch)
-
-            # validation
-            if epoch % test_batch == 0:
-                with torch.no_grad():
-                    for m in model:
-                        model[m].eval()
-                    test_loss = n_acc = n_all = 0
-                    for i, batch in enumerate(loader.test[t]):
-                        x, y = batch.text.to(device), batch.label.to(device)
-                        y_ = model[t](model['rep'](x))
-                        loss = criterion(y_, y)
-                        test_loss += loss.item()
-                        n_acc += y_.argmax(1).eq(y).sum()
-                        n_all += y.shape[0]
-                    acc = n_acc / float(n_all)
-                    writer.add_scalar(f'loss/test/{t}', test_loss, epoch)
-                    writer.add_scalar(f'acc/test/{t}', acc, epoch)
-                    losses_var[-1].append(test_loss)
-                    avg_acc[-1].append(n_acc)
-                    avg_num[-1].append(n_all)
-
-            if epoch % 100 == 0 and epoch > 0:
-                state_dict = {'model': {}}
-                for key in ['rep', t]:
-                    state_dict['model'][key] = model[key].state_dict()
-                os.makedirs(f'checkpoints/{args.d}/single/', exist_ok=True)
-                torch.save(state_dict, f'checkpoints/{args.d}/single/{t}_{epoch}')
-        # re-init model & optimizer
-        model = init_model()
-        [opt], schedulers = get_opt(model)
-
-    for i in range(len(avg_num[0])):
-        tt_var = []
-        tt_acc = 0
-        tt_num = 0
-        for j in range(len(tasks)):
-            tt_var.append(losses_var[j][i])
-            tt_acc += avg_acc[j][i]
-            tt_num += avg_num[j][i]
-        writer.add_scalar('avg_acc', tt_acc/float(tt_num), i*test_batch)
-        writer.add_scalar('avg_var', numpy.var(tt_var), i*test_batch)
-
-
-def validate_all_tasks(model, epoch):
-    with torch.no_grad():
-        for m in model:
-            model[m].eval()
-        accs = []
-        losses_var = []
-        for t in tasks:
-            test_loss = n_acc = n_all = 0
-            for i, batch in enumerate(loader.test[t]):
-                x, y = batch.text.to(device), batch.label.to(device)
-                if cfg.task == 'uncertain':
-                    y_ , _ = model[t](model['rep'](x))
-                else:
-                    y_ = model[t](model['rep'](x))
-                loss = criterion(y_, y)
-                test_loss += loss.item()
-                n_acc += y_.argmax(1).eq(y).sum()
-                n_all += y.shape[0]
-            acc = n_acc / float(n_all)
-            accs.append(acc)
-            losses_var.append(test_loss)
-            writer.add_scalar(f'loss/test/{t}', test_loss, epoch)
-            writer.add_scalar(f'acc/test/{t}', acc, epoch)
-        avg_acc = sum(accs)/len(accs)
-        avg_loss = sum(losses_var) / len(losses_var)
-        avg_var = numpy.var(losses_var)
-        writer.add_scalar('avg_acc', avg_acc, epoch)
-        writer.add_scalar('avg_loss', avg_loss, epoch)
-        writer.add_scalar('avg_var', avg_var, epoch)
-        accs.append(avg_acc)
-        losses_var.append(avg_var)
-        accs = [i.item() for i in accs]
-        print_result.loc[epoch] = accs
-        print_loss.loc[epoch] = losses_var
-        print_result.to_csv(os.path.join(save_path,"result_"+exp_id+".csv"))
-        print_loss.to_csv(os.path.join(save_path,"loss_"+exp_id+".csv"))
-
-
 
 
 
 if __name__ == '__main__':
-    if args.t == 'single':
-        single_task()
-    elif args.t == 'uniform':
-        uniform_multi_task()
     elif args.t == 'mgda':
-        mgda_multi_task()
+        mgda_multi_agent()
     elif args.t == 'mgdacag':
-        mgdacag_multi_task()
+        mgdacag_multi_agent()
     elif args.t == 'balanced':
-        balanced_multi_task()
+        balanced_multi_agent()
     elif args.t == 'balancedmgda':
-        balancedmgda_multi_task()
+        balancedmgda_multi_agent()
 
 
     print('exit')
 
-# python train.py -d 20news -t balanced -g 1  balancedmgda
-# python train.py -d sentiment -t balanced -g 2
-
-#python train.py -d sentiment -t meta -g 1 -alpha 0.5 -split 0.1
