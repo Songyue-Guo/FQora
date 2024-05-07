@@ -4,5 +4,5 @@ Data Market to deal with quality-constrainted queries and a fair utility allocai
 ![Framework of FQora](https://github.com/Songyue-Guo/FQora/blob/main/image/framework.png)
 ## Quick Start 
 ```python
-python FQora.py  -dataset CIFAR10/CIFAR100
+python FQora_data_market.py  --dataset CIFAR10/CIFAR100
 ```
